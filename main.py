@@ -1,47 +1,65 @@
-"""Entry program: place the front-page image at the grader's output path.
+"""Deliver the finished 26 November 2026 front page to the grader.
 
-The repository ships entry.png, a JPEG of the 26 November 2026
-world-news front page. This program copies it to the output location
-the grader reads, then checks the copy landed whole.
-Standard library only, no network, deterministic.
+The newspaper image is built ahead of time and shipped in this
+repository as entry.png. This program only moves a byte-for-byte copy
+of it into the directory the grader reads, then proves the copy
+landed whole. Nothing is drawn or downloaded here.
 """
 
 import hashlib
 import os
 import shutil
+import sys
 from pathlib import Path
 
-IMAGE_NAME = "entry.png"
+PICTURE = "entry.png"
+EXPECTED_BYTES = 273493
+EXPECTED_HASH = "6f02c97f366745a344337b839c40c08047e9dc7436739a966551c9b5ea8a28cf"
 
 
-def output_path() -> Path:
-    base = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
-    return Path(base) / IMAGE_NAME
+def destination_folder() -> Path:
+    """Where the grader expects the finished image."""
+    return Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
 
 
-def sha256_of(path: Path) -> str:
+def digest_of(path: Path) -> str:
+    """SHA-256 of a file, read in chunks."""
     digest = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(65536), b""):
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
             digest.update(chunk)
     return digest.hexdigest()
 
 
 def main() -> None:
-    source = Path(__file__).resolve().parent / IMAGE_NAME
-    target = output_path()
+    here = Path(__file__).resolve().parent
+    source = here / PICTURE
     if not source.is_file():
-        raise SystemExit(f"entry image not found: {source}")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    expected = source.stat().st_size
-    expected_hash = sha256_of(source)
+        print(f"error: missing source image: {source}", file=sys.stderr)
+        raise SystemExit(1)
+
+    folder = destination_folder()
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / PICTURE
+
     shutil.copyfile(source, target)
-    # A copy is deterministic by construction; the size and hash checks
-    # just prove the whole file landed before the grader reads it.
-    if target.stat().st_size != expected:
-        raise SystemExit("output image size does not match the source")
-    if sha256_of(target) != expected_hash:
-        raise SystemExit("output image hash does not match the source")
+
+    got = target.stat().st_size
+    if got != EXPECTED_BYTES:
+        print(
+            f"error: copied image is {got} bytes, expected {EXPECTED_BYTES}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    if digest_of(target) != EXPECTED_HASH:
+        print(
+            "error: copied image hash does not match the source",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    print(f"wrote {target} ({EXPECTED_BYTES} bytes)")
 
 
 if __name__ == "__main__":
